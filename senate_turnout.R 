@@ -1,0 +1,30 @@
+library(tidyverse)
+library(haven)
+library(brms)
+
+
+presidential_data <- read_csv("data/mit_election_data/president_1970_2020/1976-2020-president.csv")
+presidential_data_for_joining <- presidential_data %>%
+    select(year, state_po, party_simplified, candidatevotes) %>%
+    rename(presidential_votes = candidatevotes) %>%
+    summarize(presidential_votes = sum(presidential_votes), .by = c(year, state_po))
+
+senate_data <- read_csv("data/mit_election_data/senate_1970_2020/1976-2020-senate.csv") %>%
+    filter(stage == "gen") %>%
+    mutate(n_candidates = n(), .by = c(state_po, year))
+
+senate_data_for_joining <- senate_data %>%
+    rename(senate_votes = candidatevotes) %>%
+    summarize(senate_votes = sum(senate_votes), .by = c(n_candidates, special, year, state_po)) %>%
+    filter(senate_votes > 5000)
+
+data <- inner_join(presidential_data_for_joining, senate_data_for_joining)
+
+data <- data %>%
+    mutate(frac = senate_votes / presidential_votes) %>%
+    mutate(year_sq = (year-mean(year))^2)  %>%
+    mutate(year_sq = year_sq / sd(year_sq))
+
+
+brm_model <- brm(frac ~ year + year_sq + special +(1|n_candidates) + (1|state_po), data = data, cores = 5)
+
